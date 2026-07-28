@@ -6,11 +6,25 @@ from placeborag.embedder import (
     FakeEmbedder,
     cosine_similarity,
 )
+from placeborag.vector_store import (
+    CHROMA_PROFILE,
+    PROFILES,
+    QDRANT_PROFILE,
+    BackendProfile,
+    FakeVectorStore,
+    Match,
+)
 
 __all__ = [
+    "CHROMA_PROFILE",
     "DEFAULT_DIMENSIONS",
     "DEFAULT_MODEL_NAME",
+    "PROFILES",
+    "QDRANT_PROFILE",
+    "BackendProfile",
     "FakeEmbedder",
+    "FakeVectorStore",
+    "Match",
     "cosine_similarity",
 ]
 

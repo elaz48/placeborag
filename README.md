@@ -43,6 +43,46 @@ assert a.embed("refund policy") != b.embed("refund policy")
 
 Every vector is L2-normalized, including for the empty string and for non-ASCII input.
 
+## Steering what is near what
+
+Hashing gets you meaningful ordering for free, but sometimes a test needs to state outright that these three phrasings mean the same thing. Declare a cluster:
+
+```python
+from placeborag import FakeEmbedder, cosine_similarity
+
+embedder = FakeEmbedder(clusters={
+    "refund": ["refund policy", "money back", "hogyan kérek vissza pénzt"],
+    "shipping": ["delivery times", "szállítási idő"],
+})
+
+assert cosine_similarity(
+    embedder.embed("refund policy"), embedder.embed("money back")
+) > cosine_similarity(
+    embedder.embed("refund policy"), embedder.embed("delivery times")
+)
+```
+
+Any text you did not declare falls through to the hashing layer unchanged, so clusters are additive — you steer the handful of phrases the test is actually about and leave the rest alone.
+
+The declaration is checked when the embedder is constructed, not when a test later fails mysteriously. If the geometry cannot satisfy what you declared, you get a `ValueError` naming the offending similarities:
+
+```python
+FakeEmbedder(clusters={"a": ["same text"], "b": ["same text"]})
+# ValueError: 'same text' is declared in more than one cluster ('a' and 'b')
+```
+
+Each cluster has an anchor you can query with. The cosine between an anchor and one of its members is exactly `1 / sqrt(1 + jitter**2)` — no dimension term — so ranking a cluster's members against their anchor gives the same order at `dimensions=64` and `dimensions=1024`:
+
+```python
+anchor = embedder.cluster_anchor("refund")
+ranked = sorted(
+    ["refund policy", "money back"],
+    key=lambda text: -cosine_similarity(anchor, embedder.embed(text)),
+)
+```
+
+Ranking members against *each other* does not carry that guarantee: that angle involves two jitter directions, and it does depend on the dimension.
+
 ## The bug you cannot currently unit test
 
 Post-filtering applies your metadata filter *after* the top-k cut, so it can return fewer results than you asked for. Same query, same `k`, same data — different answer, depending only on which backend you are pointed at:
@@ -98,13 +138,16 @@ Character n-grams and word tokens are hashed into `dimensions` buckets with a si
 
 That makes the ranking explainable to whoever reads the failing test, which is the part random vectors can never give you.
 
+Embedding 10,000 short strings takes well under a second on one core, so a full test suite can embed freely without a fixture cache.
+
 ## Status
 
-Early. `0.0.1` on PyPI contains the `FakeEmbedder` hashing layer only — **`FakeVectorStore` is on `main` but not in a released version yet**, so the examples above need an install from source until the next release.
+Early, and pre-1.0 in the way that matters: **vectors are stable within a version, not across versions.** Assert on relative ordering, not on stored coordinates.
+
+`0.0.1` on PyPI contains the `FakeEmbedder` hashing layer only. Declared clusters and `FakeVectorStore` are on `main` but **not in a released version yet**, so the examples above need an install from source until the next release. The `0.0.1` hashing also produces different vectors than `main` does — the ordering behaviour is the same, the coordinates are not.
 
 Next up:
 
-- declared clusters, so you can steer which texts are near which
 - more backend profiles
 - pytest fixtures as a thin layer over the library
 

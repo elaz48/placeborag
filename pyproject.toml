@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "placeborag"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Deterministic test doubles for the retrieval half of a RAG pipeline"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,7 +31,11 @@ Homepage = "https://github.com/elaz48/placeborag"
 Issues = "https://github.com/elaz48/placeborag/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "hypothesis>=6"]
+
+[tool.hatch.version]
+# Single source of truth. Bumping __version__ is the whole release edit.
+path = "src/placeborag/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/placeborag"]

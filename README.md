@@ -144,7 +144,7 @@ Embedding 10,000 short strings takes well under a second on one core, so a full 
 
 Early, and pre-1.0 in the way that matters: **vectors are stable within a version, not across versions.** Assert on relative ordering, not on stored coordinates.
 
-`0.0.1` on PyPI contains the `FakeEmbedder` hashing layer only. Declared clusters and `FakeVectorStore` are on `main` but **not in a released version yet**, so the examples above need an install from source until the next release. The `0.0.1` hashing also produces different vectors than `main` does — the ordering behaviour is the same, the coordinates are not.
+`0.0.2` is the current release and contains everything documented above. `0.0.1` had the hashing layer only, and produces different coordinates than `0.0.2` — the ordering behaviour is the same, the numbers are not.
 
 Next up:
 

@@ -106,6 +106,11 @@ class FakeVectorStore:
         self._next_sequence = 0
 
     @property
+    def embedder(self) -> FakeEmbedder:
+        """The embedder this store indexes and queries with."""
+        return self._embedder
+
+    @property
     def profile(self) -> BackendProfile:
         return self._profile
 

@@ -30,6 +30,11 @@ dependencies = []
 Homepage = "https://github.com/elaz48/placeborag"
 Issues = "https://github.com/elaz48/placeborag/issues"
 
+[project.entry-points.pytest11]
+# Registers the fixtures when placeborag is installed. The library does not
+# import pytest, so a non-pytest user never pays for this.
+placeborag = "placeborag.pytest_plugin"
+
 [project.optional-dependencies]
 dev = ["pytest>=7", "hypothesis>=6"]
 

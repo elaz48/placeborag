@@ -1,5 +1,9 @@
 # placeborag
 
+[![ci](https://github.com/elaz48/placeborag/actions/workflows/ci.yml/badge.svg)](https://github.com/elaz48/placeborag/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/placeborag.svg)](https://pypi.org/project/placeborag/)
+[![Python versions](https://img.shields.io/pypi/pyversions/placeborag.svg)](https://pypi.org/project/placeborag/)
+
 Deterministic test doubles for the **retrieval** half of a RAG pipeline.
 
 Existing mock LLM tooling stubs the chat completion endpoint and hands back pseudo-random embedding vectors of the correct shape. Correct shape, no semantic structure. Any document can come back at any rank, so every retrieval assertion in your test suite is decorative: you can assert that the pipeline ran, not that it retrieved the right thing.
@@ -132,6 +136,33 @@ Both profiles rank documents in the same relevance order — only the reported n
 
 Ties are broken deterministically, and the two profiles break them differently: Chroma-style by insertion order, Qdrant-style by id. Real stores differ here too, and the difference stays invisible until a test flakes in CI.
 
+## pytest fixtures
+
+Installing placeborag registers two fixtures. They are a thin layer over the library — everything below is reachable from a plain script or a notebook too.
+
+```python
+def test_retrieval(fake_vector_store):
+    fake_vector_store.upsert("doc", "our refund policy allows returns")
+
+    matches = fake_vector_store.query("refund policy", k=1)
+
+    assert matches[0].id == "doc"
+```
+
+Configure them per test with the `placeborag` marker:
+
+```python
+@pytest.mark.placeborag(
+    profile="qdrant",
+    filter_mode="post",
+    clusters={"refund": ["refund policy", "money back"]},
+)
+def test_post_filtering_under_returns(fake_vector_store):
+    ...
+```
+
+Embedder options (`model_name`, `dimensions`, `clusters`, `cluster_spread`) and store options (`profile`, `filter_mode`) go in the same marker and are routed to the right object. A misspelled option raises instead of being silently ignored.
+
 ## How it works
 
 Character n-grams and word tokens are hashed into `dimensions` buckets with a signed hashing trick, summed, and normalized. Texts sharing tokens land near each other. There is no training data and no model file — the seed is derived from `(text, model_name, dimensions)`.
@@ -142,18 +173,25 @@ Embedding 10,000 short strings takes well under a second on one core, so a full 
 
 ## Status
 
-Early, and pre-1.0 in the way that matters: **vectors are stable within a version, not across versions.** Assert on relative ordering, not on stored coordinates.
+`0.1.0` is the current release and contains everything documented above.
 
-`0.0.2` is the current release and contains everything documented above. `0.0.1` had the hashing layer only, and produces different coordinates than `0.0.2` — the ordering behaviour is the same, the numbers are not.
+Pre-1.0 in the way that matters: **vectors are stable within a version, not across versions.** Assert on relative ordering, never on stored coordinates. (`0.0.1` produces different coordinates than later versions; the ordering behaviour is the same.)
 
 Next up:
 
-- more backend profiles
-- pytest fixtures as a thin layer over the library
+- more backend profiles: Qdrant is modelled, FAISS and Weaviate are not
+- richer metadata filters — `where` is equality-only today
+- failure injection on the retrieval path: timeouts, partial index, degraded recall
+
+## Why this exists
+
+Longer version, with the three bugs random mock vectors hide: [Your RAG tests are asserting that the pipeline ran](docs/why-random-vectors-fail.md).
 
 ## What this is not
 
 Not an eval framework, not a benchmark, not a production vector store, and not another OpenAI-compatible mock server.
+
+A fake embedder cannot tell you whether your retrieval *quality* is good — nothing offline can, and RAGAS and DeepEval occupy that space properly. It tells you whether your retrieval *plumbing* is correct: sort direction, filter ordering, the reindex path, tie-breaking.
 
 ## License
 

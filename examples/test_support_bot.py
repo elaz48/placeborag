@@ -5,6 +5,7 @@ which document came back, in what order, and how many.
 """
 
 import pytest
+
 from support_bot import Document, SupportBot
 
 DOCUMENTS = [
@@ -142,9 +143,7 @@ class TestSteeringWithClusters:
             ]
         },
     )
-    def test_a_paraphrased_question_reaches_the_declared_chunk(
-        self, fake_vector_store
-    ):
+    def test_a_paraphrased_question_reaches_the_declared_chunk(self, fake_vector_store):
         # Hashing alone would not connect these two: they share almost no
         # tokens. Declaring the cluster states the intent outright.
         #

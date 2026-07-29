@@ -37,7 +37,16 @@ def test_vector_length_follows_the_dimensions_argument():
 
 @pytest.mark.parametrize(
     "text",
-    ["", " ", "!!!", "a", "refund policy", "hogyan kérek vissza pénzt", "日本語のテキスト", "🙂🙂"],
+    [
+        "",
+        " ",
+        "!!!",
+        "a",
+        "refund policy",
+        "hogyan kérek vissza pénzt",
+        "日本語のテキスト",
+        "🙂🙂",
+    ],
 )
 def test_every_vector_is_normalized(text):
     vector = FakeEmbedder(dimensions=32).embed(text)

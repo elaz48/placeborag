@@ -36,7 +36,7 @@ Issues = "https://github.com/elaz48/placeborag/issues"
 placeborag = "placeborag.pytest_plugin"
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "hypothesis>=6"]
+dev = ["pytest>=7", "hypothesis>=6", "ruff>=0.6"]
 
 [tool.hatch.version]
 # Single source of truth. Bumping __version__ is the whole release edit.
@@ -47,6 +47,26 @@ packages = ["src/placeborag"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/placeborag", "tests", "README.md", "LICENSE"]
+
+[tool.ruff]
+target-version = "py310"
+src = ["src", "tests", "examples"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # import sorting
+    "UP",   # pyupgrade — flags syntax kept alive for versions we dropped
+    "B",    # bugbear — mutable defaults, loop-variable capture
+    "SIM",  # simplify
+    "RUF",  # ruff's own checks
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests reach for private state deliberately, and fixtures shadow their own
+# names by design.
+"tests/*" = ["B011"]
 
 [tool.pytest.ini_options]
 # examples/ runs in CI too. An example that quietly rots is worse than none.

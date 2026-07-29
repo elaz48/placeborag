@@ -94,5 +94,7 @@ class SupportBot:
         where = {"lang": lang} if lang else None
         matches = self._store.query(question, k=self._top_k, where=where)
         passages = [match.text for match in matches]
-        sources = tuple(dict.fromkeys(match.metadata["document_id"] for match in matches))
+        sources = tuple(
+            dict.fromkeys(match.metadata["document_id"] for match in matches)
+        )
         return Answer(text=self._generate(question, passages), sources=sources)

@@ -74,7 +74,9 @@ class TestClusterDeterminism:
 
         for _, text in _members(CLUSTERS):
             vector = embedder.embed(text)
-            assert math.isclose(math.sqrt(sum(v * v for v in vector)), 1.0, rel_tol=1e-9)
+            assert math.isclose(
+                math.sqrt(sum(v * v for v in vector)), 1.0, rel_tol=1e-9
+            )
 
     def test_model_name_still_changes_the_space(self):
         left = FakeEmbedder(model_name="a", clusters=CLUSTERS)
@@ -149,9 +151,9 @@ class TestSubstringMatching:
         anchor = embedder.cluster_anchor("refund")
         other = embedder.cluster_anchor("shipping")
 
-        assert cosine_similarity(anchor, embedder.embed(self.CHUNK)) > cosine_similarity(
-            other, embedder.embed(self.CHUNK)
-        )
+        assert cosine_similarity(
+            anchor, embedder.embed(self.CHUNK)
+        ) > cosine_similarity(other, embedder.embed(self.CHUNK))
 
     def test_a_matched_chunk_still_gets_its_own_vector(self):
         embedder = self._embedder("substring")
@@ -243,9 +245,7 @@ class TestSubstringMatching:
 class TestLoudValidation:
     def test_rejects_a_text_declared_in_two_clusters(self):
         with pytest.raises(ValueError, match="declared in more than one cluster"):
-            FakeEmbedder(
-                clusters={"a": ["shared text"], "b": ["shared text", "other"]}
-            )
+            FakeEmbedder(clusters={"a": ["shared text"], "b": ["shared text", "other"]})
 
     def test_rejects_an_empty_cluster(self):
         with pytest.raises(ValueError, match="at least one member"):

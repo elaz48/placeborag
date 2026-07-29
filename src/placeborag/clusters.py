@@ -97,9 +97,7 @@ class ClusterSpace:
         return list(_combine(anchor, offset, magnitude))
 
     def _matching_member(self, text: str) -> str | None:
-        return next(
-            (member for member in self._by_specificity if member in text), None
-        )
+        return next((member for member in self._by_specificity if member in text), None)
 
     def anchor_for(self, name: str) -> list[float] | None:
         """The cluster's centre. Querying with it ranks members by jitter.
@@ -127,9 +125,7 @@ class ClusterSpace:
 
 def validate_match(match: str) -> str:
     if match not in MATCH_MODES:
-        raise ValueError(
-            f"cluster_match must be one of {MATCH_MODES}, got {match!r}"
-        )
+        raise ValueError(f"cluster_match must be one of {MATCH_MODES}, got {match!r}")
     return match
 
 
@@ -146,7 +142,8 @@ def validate_spread(spread: float) -> float:
 def _validate_declaration(clusters: Mapping[str, Sequence[str]]) -> None:
     if not isinstance(clusters, Mapping):
         raise TypeError(
-            f"clusters must be a mapping of name to texts, got {type(clusters).__name__}"
+            "clusters must be a mapping of name to texts, "
+            f"got {type(clusters).__name__}"
         )
 
     seen: dict[str, str] = {}
@@ -241,7 +238,7 @@ def _assert_separable(
 def _combine(
     anchor: tuple[float, ...], jitter: tuple[float, ...], magnitude: float
 ) -> tuple[float, ...]:
-    combined = [a + magnitude * j for a, j in zip(anchor, jitter)]
+    combined = [a + magnitude * j for a, j in zip(anchor, jitter, strict=False)]
     norm = math.sqrt(sum(value * value for value in combined))
     return tuple(value / norm for value in combined)
 
@@ -263,8 +260,8 @@ def _orthogonal_component(
     None when `vector` is (numerically) parallel to the anchor and therefore
     has no perpendicular part to speak of.
     """
-    projection = sum(v * a for v, a in zip(vector, anchor))
-    residual = [v - projection * a for v, a in zip(vector, anchor)]
+    projection = sum(v * a for v, a in zip(vector, anchor, strict=False))
+    residual = [v - projection * a for v, a in zip(vector, anchor, strict=False)]
     norm = math.sqrt(sum(value * value for value in residual))
     if norm <= _MIN_USABLE_NORM:
         return None
@@ -276,8 +273,8 @@ def _orthogonal_unit_vector(
 ) -> tuple[float, ...]:
     for attempt in range(_ORTHOGONALIZATION_ATTEMPTS):
         candidate = _unit_vector(key, f"{label}#{attempt}", dimensions)
-        projection = sum(c * a for c, a in zip(candidate, anchor))
-        residual = [c - projection * a for c, a in zip(candidate, anchor)]
+        projection = sum(c * a for c, a in zip(candidate, anchor, strict=False))
+        residual = [c - projection * a for c, a in zip(candidate, anchor, strict=False)]
         norm = math.sqrt(sum(value * value for value in residual))
         if norm > _MIN_USABLE_NORM:
             return tuple(value / norm for value in residual)
@@ -326,4 +323,4 @@ def _uniform_floats(key: bytes, label: str, count: int) -> list[float]:
 
 
 def _cosine(left: tuple[float, ...], right: tuple[float, ...]) -> float:
-    return sum(a * b for a, b in zip(left, right))
+    return sum(a * b for a, b in zip(left, right, strict=False))

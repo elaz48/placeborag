@@ -75,7 +75,9 @@ class FakeEmbedder:
         if not isinstance(dimensions, int) or isinstance(dimensions, bool):
             raise TypeError("dimensions must be an int")
         if dimensions < _MIN_DIMENSIONS:
-            raise ValueError(f"dimensions must be >= {_MIN_DIMENSIONS}, got {dimensions}")
+            raise ValueError(
+                f"dimensions must be >= {_MIN_DIMENSIONS}, got {dimensions}"
+            )
 
         self._model_name = model_name
         self._dimensions = dimensions
@@ -217,7 +219,7 @@ def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
     right_norm = _norm(right)
     if left_norm == 0.0 or right_norm == 0.0:
         raise ValueError("cosine similarity is undefined for a zero vector")
-    dot = sum(a * b for a, b in zip(left, right))
+    dot = sum(a * b for a, b in zip(left, right, strict=False))
     return dot / (left_norm * right_norm)
 
 

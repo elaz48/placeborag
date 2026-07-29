@@ -19,6 +19,11 @@ from collections.abc import Mapping, Sequence
 
 DEFAULT_CLUSTER_SPREAD = 0.15
 
+MATCH_EXACT = "exact"
+MATCH_SUBSTRING = "substring"
+MATCH_MODES = (MATCH_EXACT, MATCH_SUBSTRING)
+DEFAULT_CLUSTER_MATCH = MATCH_EXACT
+
 _MAX_CLUSTER_SPREAD = 1.0
 _UNIFORM_DIVISOR = float(1 << 64)
 _BYTES_PER_FLOAT = 8
@@ -37,21 +42,64 @@ class ClusterSpace:
         magnitude_key: bytes,
         dimensions: int,
         spread: float,
+        match: str = DEFAULT_CLUSTER_MATCH,
     ) -> None:
         _validate_declaration(clusters)
+        self._key = key
+        self._magnitude_key = magnitude_key
+        self._dimensions = dimensions
         self._spread = spread
+        self._match = validate_match(match)
         self._anchors, self._vectors = _build_vectors(
             clusters, key, magnitude_key, dimensions, spread
         )
         self._cluster_of = {
             text: name for name, texts in clusters.items() for text in texts
         }
+        # Longest declaration first, so the most specific one wins when a
+        # chunk contains several.
+        self._by_specificity = sorted(self._cluster_of, key=len, reverse=True)
         _assert_separable(clusters, self._vectors)
 
     def vector_for(self, text: str) -> list[float] | None:
-        """Returns a copy of the declared vector, or None if undeclared."""
+        """The vector for an exactly declared text, or None."""
         vector = self._vectors.get(text)
         return list(vector) if vector is not None else None
+
+    def derive(self, text: str, hashed: Sequence[float]) -> list[float] | None:
+        """Pulls a text containing a declared member into that cluster.
+
+        Only active in `substring` mode. The offset from the anchor is the
+        text's own hashing vector, orthogonalized against that anchor — so
+        two chunks that hash near each other stay near each other *inside*
+        the cluster, instead of being scattered by unrelated jitter. The
+        cosine to the anchor is still exactly `1 / sqrt(1 + magnitude**2)`,
+        so the dimension-independence guarantee is unaffected.
+        """
+        if self._match != MATCH_SUBSTRING:
+            return None
+        member = self._matching_member(text)
+        if member is None:
+            return None
+
+        name = self._cluster_of[member]
+        anchor = self._anchors[name]
+        offset = _orthogonal_component(hashed, anchor)
+        if offset is None:
+            # The hashing vector is parallel to the anchor, so it carries no
+            # usable offset. Fall back to a generated direction.
+            offset = _orthogonal_unit_vector(
+                self._key, f"jitter:{name}:{text}", anchor, self._dimensions
+            )
+        magnitude = _jitter_magnitude(
+            self._magnitude_key, f"magnitude:{name}:{text}", self._spread
+        )
+        return list(_combine(anchor, offset, magnitude))
+
+    def _matching_member(self, text: str) -> str | None:
+        return next(
+            (member for member in self._by_specificity if member in text), None
+        )
 
     def anchor_for(self, name: str) -> list[float] | None:
         """The cluster's centre. Querying with it ranks members by jitter.
@@ -66,11 +114,23 @@ class ClusterSpace:
         return list(anchor) if anchor is not None else None
 
     def cluster_of(self, text: str) -> str | None:
-        return self._cluster_of.get(text)
+        name = self._cluster_of.get(text)
+        if name is not None or self._match == MATCH_EXACT:
+            return name
+        member = self._matching_member(text)
+        return self._cluster_of[member] if member is not None else None
 
     @property
     def names(self) -> list[str]:
         return sorted(set(self._cluster_of.values()))
+
+
+def validate_match(match: str) -> str:
+    if match not in MATCH_MODES:
+        raise ValueError(
+            f"cluster_match must be one of {MATCH_MODES}, got {match!r}"
+        )
+    return match
 
 
 def validate_spread(spread: float) -> float:
@@ -193,6 +253,22 @@ def _jitter_magnitude(key: bytes, label: str, spread: float) -> float:
     cosine to the anchor is 1 / sqrt(1 + magnitude**2), with no dimension term.
     """
     return spread * (0.5 + _uniform_floats(key, label, 1)[0])
+
+
+def _orthogonal_component(
+    vector: Sequence[float], anchor: tuple[float, ...]
+) -> tuple[float, ...] | None:
+    """The part of `vector` perpendicular to `anchor`, normalized.
+
+    None when `vector` is (numerically) parallel to the anchor and therefore
+    has no perpendicular part to speak of.
+    """
+    projection = sum(v * a for v, a in zip(vector, anchor))
+    residual = [v - projection * a for v, a in zip(vector, anchor)]
+    norm = math.sqrt(sum(value * value for value in residual))
+    if norm <= _MIN_USABLE_NORM:
+        return None
+    return tuple(value / norm for value in residual)
 
 
 def _orthogonal_unit_vector(

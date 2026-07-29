@@ -11,6 +11,7 @@ Configure per test with the `placeborag` marker:
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 import pytest
@@ -19,10 +20,20 @@ from placeborag.vector_store import FakeEmbedder, FakeVectorStore
 
 MARKER_NAME = "placeborag"
 
-_EMBEDDER_OPTIONS = frozenset(
-    {"model_name", "dimensions", "clusters", "cluster_spread"}
-)
-_STORE_OPTIONS = frozenset({"profile", "filter_mode"})
+
+def _constructor_options(target: type, exclude: set[str]) -> frozenset[str]:
+    """Marker options are whatever the constructor accepts.
+
+    Derived rather than listed, so adding a constructor argument cannot
+    leave the plugin rejecting an option the library supports.
+    """
+    parameters = inspect.signature(target.__init__).parameters
+    return frozenset(parameters) - {"self"} - exclude
+
+
+_EMBEDDER_OPTIONS = _constructor_options(FakeEmbedder, exclude=set())
+# The store's embedder comes from the fake_embedder fixture, not the marker.
+_STORE_OPTIONS = _constructor_options(FakeVectorStore, exclude={"embedder"})
 
 
 def pytest_configure(config: pytest.Config) -> None:

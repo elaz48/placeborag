@@ -49,4 +49,5 @@ packages = ["src/placeborag"]
 include = ["src/placeborag", "tests", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# examples/ runs in CI too. An example that quietly rots is worse than none.
+testpaths = ["tests", "examples"]

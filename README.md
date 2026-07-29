@@ -68,6 +68,20 @@ assert cosine_similarity(
 
 Any text you did not declare falls through to the hashing layer unchanged, so clusters are additive — you steer the handful of phrases the test is actually about and leave the rest alone.
 
+**If your pipeline chunks documents, use `cluster_match="substring"`.** By default declarations match byte for byte, and a chunked pipeline never stores the exact text you declared — so the declaration quietly does nothing. Substring mode pulls any text *containing* a declared member into that cluster, with its own vector:
+
+```python
+embedder = FakeEmbedder(
+    clusters={"refund": ["refund policy allows returns"]},
+    cluster_match="substring",
+)
+
+chunk = "Our refund policy allows returns within 30 days. Refunds are"
+assert embedder.cluster_of(chunk) == "refund"
+```
+
+Matching is case-sensitive, and the longest declaration wins when several apply.
+
 The declaration is checked when the embedder is constructed, not when a test later fails mysteriously. If the geometry cannot satisfy what you declared, you get a `ValueError` naming the offending similarities:
 
 ```python
@@ -173,7 +187,7 @@ Embedding 10,000 short strings takes well under a second on one core, so a full 
 
 ## Status
 
-`0.1.0` is the current release and contains everything documented above.
+`0.2.0` is the current release and contains everything documented above.
 
 Pre-1.0 in the way that matters: **vectors are stable within a version, not across versions.** Assert on relative ordering, never on stored coordinates. (`0.0.1` produces different coordinates than later versions; the ordering behaviour is the same.)
 
@@ -182,6 +196,10 @@ Next up:
 - more backend profiles: Qdrant is modelled, FAISS and Weaviate are not
 - richer metadata filters — `where` is equality-only today
 - failure injection on the retrieval path: timeouts, partial index, degraded recall
+
+## A worked example
+
+[`examples/`](examples/) has a small RAG pipeline — chunking, indexing, retrieval, generation — and the tests you can write against it. Including the one where post-filtering returns nothing at all, and the one where swapping the embedding model silently invalidates the index.
 
 ## Why this exists
 

@@ -15,8 +15,10 @@ import zlib
 from collections.abc import Iterable, Mapping, Sequence
 
 from placeborag.clusters import (
+    DEFAULT_CLUSTER_MATCH,
     DEFAULT_CLUSTER_SPREAD,
     ClusterSpace,
+    validate_match,
     validate_spread,
 )
 
@@ -53,6 +55,11 @@ class FakeEmbedder:
             cannot be satisfied.
         cluster_spread: How far members sit from their anchor. Smaller means
             tighter clusters.
+        cluster_match: `"exact"` matches declared texts byte for byte.
+            `"substring"` also pulls in any text that *contains* a declared
+            member, which is what a chunking pipeline needs — the chunk that
+            reaches the index is never byte-identical to what you declared.
+            Matching is case-sensitive, and the longest declaration wins.
     """
 
     def __init__(
@@ -61,6 +68,7 @@ class FakeEmbedder:
         dimensions: int = DEFAULT_DIMENSIONS,
         clusters: Mapping[str, Sequence[str]] | None = None,
         cluster_spread: float = DEFAULT_CLUSTER_SPREAD,
+        cluster_match: str = DEFAULT_CLUSTER_MATCH,
     ) -> None:
         if not isinstance(model_name, str) or not model_name:
             raise ValueError("model_name must be a non-empty string")
@@ -72,6 +80,7 @@ class FakeEmbedder:
         self._model_name = model_name
         self._dimensions = dimensions
         self._cluster_spread = validate_spread(cluster_spread)
+        self._cluster_match = validate_match(cluster_match)
         self._key = hashlib.blake2b(
             f"{model_name}:{dimensions}".encode(), digest_size=_KEY_SIZE
         ).digest()
@@ -93,6 +102,7 @@ class FakeEmbedder:
                 magnitude_key=self._model_key,
                 dimensions=dimensions,
                 spread=self._cluster_spread,
+                match=self._cluster_match,
             )
             if clusters is not None
             else None
@@ -145,7 +155,15 @@ class FakeEmbedder:
             vector = [0.0] * self._dimensions
             self._add_feature(vector, _sentinel(text), self._sentinel_seed)
             norm = _norm(vector)
-        return [value / norm for value in vector]
+        hashed = [value / norm for value in vector]
+
+        if self._clusters is not None:
+            # Substring mode reuses the hashing vector as the offset from the
+            # anchor, so it has to be computed first.
+            derived = self._clusters.derive(text, hashed)
+            if derived is not None:
+                return derived
+        return hashed
 
     def embed_batch(self, texts: Iterable[str]) -> list[list[float]]:
         """Returns one vector per input text, in order."""

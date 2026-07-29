@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from placeborag.embedder import FakeEmbedder, cosine_similarity
+from placeborag.filters import compile_filter
 
 DEFAULT_K = 10
 
@@ -166,6 +167,10 @@ class FakeVectorStore:
     ) -> list[Match]:
         """Returns up to `k` matches, best first.
 
+        `where` supports equality (`{"lang": "hu"}`) and operators
+        (`{"year": {"$gte": 2024}}`, `{"lang": {"$in": [...]}}`, `$and`,
+        `$or`). A malformed clause raises here, before any record is read.
+
         Under `filter_mode="post"` this can return fewer than `k` matches even
         when more records satisfy `where`, because the filter runs after the
         top-k cut. That is the behaviour of real post-filtering backends and
@@ -176,14 +181,17 @@ class FakeVectorStore:
         if k < 1:
             raise ValueError(f"k must be >= 1, got {k}")
 
+        matches_filter = compile_filter(where)
         query_vector = self._embedder.embed(text)
         candidates = list(self._records.values())
         if self._filter_mode == "pre" and where:
-            candidates = [record for record in candidates if _matches(record, where)]
+            candidates = [
+                record for record in candidates if matches_filter(record.metadata)
+            ]
 
         ranked = self._rank(candidates, query_vector)[:k]
         if self._filter_mode == "post" and where:
-            ranked = [record for record in ranked if _matches(record, where)]
+            ranked = [record for record in ranked if matches_filter(record.metadata)]
 
         return [self._as_match(record, query_vector) for record in ranked]
 
@@ -234,8 +242,3 @@ def _resolve_profile(profile: str | BackendProfile) -> BackendProfile:
         raise ValueError(
             f"unknown profile {profile!r}, available profiles: {available}"
         ) from None
-
-
-def _matches(record: _Record, where: Mapping[str, Any]) -> bool:
-    """Equality match on every key. A missing key never matches."""
-    return all(record.metadata.get(key) == value for key, value in where.items())

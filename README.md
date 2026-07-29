@@ -132,6 +132,26 @@ assert len(post) == 1  # one of them fell outside the top-5 before filtering
 
 That second assertion is the bug that ships to production. It is not a crash and not an empty result — just a quietly incomplete answer.
 
+### Metadata filters
+
+Equality, or operators:
+
+```python
+store.query("refund policy", k=5, where={"lang": "hu"})
+store.query("refund policy", k=5, where={"year": {"$gte": 2024, "$lt": 2026}})
+store.query("refund policy", k=5, where={"lang": {"$in": ["hu", "de"]}})
+store.query("refund policy", k=5, where={
+    "$or": [{"tier": "public"}, {"year": {"$gt": 2025}}],
+})
+```
+
+Available: `$eq`, `$ne`, `$in`, `$nin`, `$gt`, `$gte`, `$lt`, `$lte`, `$and`, `$or`.
+
+Two rules worth knowing, because both are choices rather than accidents:
+
+- **A key the record does not carry never matches**, whatever the operator. `{"lang": {"$ne": "hu"}}` will not surface records with no language at all — "absent" is not a value to compare against.
+- **A malformed clause raises**, before any record is read. An unknown operator, a `$in` without a list, or a numeric bound against a string is a bug in the filter, not a record that happens not to match. A filter that silently excludes everything looks exactly like one that works.
+
 ### Score conventions
 
 Chroma-style backends return a **distance**, where lower is better. Qdrant-style backends return a **score**, where higher is better. Point the same code at the other one and your sort is reversed:
@@ -187,15 +207,15 @@ Embedding 10,000 short strings takes well under a second on one core, so a full 
 
 ## Status
 
-`0.2.0` is the current release and contains everything documented above.
+`0.3.0` is the current release and contains everything documented above.
 
 Pre-1.0 in the way that matters: **vectors are stable within a version, not across versions.** Assert on relative ordering, never on stored coordinates. (`0.0.1` produces different coordinates than later versions; the ordering behaviour is the same.)
 
 Next up:
 
 - more backend profiles: Qdrant is modelled, FAISS and Weaviate are not
-- richer metadata filters — `where` is equality-only today
 - failure injection on the retrieval path: timeouts, partial index, degraded recall
+- an orphaned-id quirk: real stores can leave a deleted id in the index
 
 ## A worked example
 

@@ -7,6 +7,7 @@ from placeborag.embedder import (
     FakeEmbedder,
     cosine_similarity,
 )
+from placeborag.failures import RetrievalError, RetrievalTimeout
 from placeborag.vector_store import (
     CHROMA_PROFILE,
     PROFILES,
@@ -27,7 +28,9 @@ __all__ = [
     "FakeEmbedder",
     "FakeVectorStore",
     "Match",
+    "RetrievalError",
+    "RetrievalTimeout",
     "cosine_similarity",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

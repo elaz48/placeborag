@@ -19,12 +19,24 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from placeborag.embedder import FakeEmbedder, cosine_similarity
+from placeborag.failures import (
+    PERFECT_RECALL,
+    VISIBILITY_IMMEDIATE,
+    VISIBILITY_MANUAL,
+    FailureQueue,
+    RecallSampler,
+    RetrievalTimeout,
+    validate_recall,
+    validate_visibility,
+)
 from placeborag.filters import compile_filter
 
 DEFAULT_K = 10
 
 _TIE_BREAK_INSERTION = "insertion"
 _TIE_BREAK_ID = "id"
+_RECALL_SEED = 0x9E3779B9
+_DELETED = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +106,8 @@ class FakeVectorStore:
         embedder: FakeEmbedder | None = None,
         profile: str | BackendProfile = CHROMA_PROFILE.name,
         filter_mode: str = "pre",
+        recall: float = PERFECT_RECALL,
+        visibility: str = VISIBILITY_IMMEDIATE,
     ) -> None:
         if filter_mode not in FILTER_MODES:
             raise ValueError(
@@ -102,14 +116,34 @@ class FakeVectorStore:
 
         self._profile = _resolve_profile(profile)
         self._filter_mode = filter_mode
+        self._recall = validate_recall(recall)
+        self._visibility = validate_visibility(visibility)
         self._embedder = embedder if embedder is not None else FakeEmbedder()
         self._records: dict[str, _Record] = {}
+        self._pending: dict[str, _Record | None] = {}
+        self._recall_sampler = RecallSampler(self._recall, _RECALL_SEED)
+        self._failures = FailureQueue()
         self._next_sequence = 0
 
     @property
     def embedder(self) -> FakeEmbedder:
         """The embedder this store indexes and queries with."""
         return self._embedder
+
+    @property
+    def recall(self) -> float:
+        """Fraction of candidates the index actually returns. 1.0 is perfect."""
+        return self._recall
+
+    @property
+    def visibility(self) -> str:
+        """`immediate`, or `manual` when writes need an explicit refresh."""
+        return self._visibility
+
+    @property
+    def pending_writes(self) -> int:
+        """Writes not yet visible to queries."""
+        return len(self._pending)
 
     @property
     def profile(self) -> BackendProfile:
@@ -145,19 +179,63 @@ class FakeVectorStore:
         if metadata is not None and not isinstance(metadata, Mapping):
             raise TypeError("metadata must be a mapping or None")
 
-        existing = self._records.get(id)
+        existing = self._records.get(id) or self._pending.get(id)
         sequence = existing.sequence if existing else self._take_sequence()
-        self._records[id] = _Record(
+        record = _Record(
             id=id,
             text=text,
             metadata=dict(metadata or {}),
             vector=self._embedder.embed(text),
             sequence=sequence,
         )
+        self._write(id, record)
 
     def delete(self, id: str) -> bool:
-        """Removes a record. Returns False if there was nothing to remove."""
+        """Removes a record. Returns False if there was nothing to remove.
+
+        Under `visibility="manual"` the removal is queued like any other
+        write, and the return value reports whether the record was visible.
+        """
+        if self._visibility == VISIBILITY_MANUAL:
+            existed = id in self._records or self._pending.get(id) is not None
+            self._write(id, _DELETED)
+            return existed
         return self._records.pop(id, None) is not None
+
+    def refresh(self) -> int:
+        """Makes queued writes visible. Returns how many were applied.
+
+        Modelled on the refresh interval of a real index: until it runs, a
+        query does not see what you just wrote.
+        """
+        applied = len(self._pending)
+        for id, record in self._pending.items():
+            if record is _DELETED:
+                self._records.pop(id, None)
+            else:
+                self._records[id] = record
+        self._pending.clear()
+        return applied
+
+    def fail_next_query(
+        self, error: BaseException | None = None, times: int = 1
+    ) -> None:
+        """Makes the next `times` queries raise `error`.
+
+        Defaults to `RetrievalTimeout`. Writes are unaffected — this models a
+        read path that fails while the index itself is fine.
+        """
+        self._failures.push(
+            error or RetrievalTimeout("injected retrieval timeout"), times
+        )
+
+    def _write(self, id: str, record: _Record | None) -> None:
+        if self._visibility == VISIBILITY_MANUAL:
+            self._pending[id] = record
+        elif record is _DELETED:
+            self._records.pop(id, None)
+        else:
+            self._records[id] = record
 
     def query(
         self,
@@ -181,6 +259,10 @@ class FakeVectorStore:
         if k < 1:
             raise ValueError(f"k must be >= 1, got {k}")
 
+        injected = self._failures.take()
+        if injected is not None:
+            raise injected
+
         matches_filter = compile_filter(where)
         query_vector = self._embedder.embed(text)
         candidates = list(self._records.values())
@@ -189,7 +271,17 @@ class FakeVectorStore:
                 record for record in candidates if matches_filter(record.metadata)
             ]
 
-        ranked = self._rank(candidates, query_vector)[:k]
+        ranked = self._rank(candidates, query_vector)
+        # Recall is applied to the ranked candidates before the top-k cut,
+        # which is where an approximate index actually loses them: the best
+        # document can vanish and a worse one take its place.
+        if not self._recall_sampler.is_perfect:
+            ranked = [
+                record
+                for record in ranked
+                if self._recall_sampler.survives(text, record.id)
+            ]
+        ranked = ranked[:k]
         if self._filter_mode == "post" and where:
             ranked = [record for record in ranked if matches_filter(record.metadata)]
 

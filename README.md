@@ -207,15 +207,54 @@ Embedding 10,000 short strings takes well under a second on one core, so a full 
 
 ## Status
 
-`0.3.0` is the current release and contains everything documented above.
+`0.4.0` is the current release and contains everything documented above.
 
 Pre-1.0 in the way that matters: **vectors are stable within a version, not across versions.** Assert on relative ordering, never on stored coordinates. (`0.0.1` produces different coordinates than later versions; the ordering behaviour is the same.)
 
 Next up:
 
 - more backend profiles: Qdrant is modelled, FAISS and Weaviate are not
-- failure injection on the retrieval path: timeouts, partial index, degraded recall
 - an orphaned-id quirk: real stores can leave a deleted id in the index
+- LangChain and LlamaIndex adapters, if anyone wants them
+
+## When retrieval misbehaves
+
+Three things go wrong in production retrieval that a clean fake never reproduces. All of them are deterministic here — you declare the failure, and it happens identically on every run.
+
+**Degraded recall.** An ANN index does not promise the true top-k. It can miss the best document and hand back a worse one, and nothing in the response says so:
+
+```python
+store = FakeVectorStore(recall=0.4)   # 1.0 is a perfect index
+
+matches = store.query("refund policy", k=5)
+assert len(matches) < 5   # candidates vanished before the top-k cut
+```
+
+The same query loses the same documents every time; a different query loses a different set. That is what an approximate index actually feels like, and it is what makes the failure reproducible instead of flaky.
+
+**Stale reads.** A write is not always visible to the next read. Pipelines that index and immediately query are built on an assumption their backend may not hold:
+
+```python
+store = FakeVectorStore(visibility="manual")
+store.upsert("doc", "our refund policy allows returns")
+
+assert store.query("refund policy") == []   # not visible yet
+
+store.refresh()
+assert store.query("refund policy")         # now it is
+```
+
+**Query failures.** Whether your pipeline degrades or collapses:
+
+```python
+from placeborag import RetrievalTimeout
+
+store.fail_next_query()                              # raises RetrievalTimeout
+store.fail_next_query(RetrievalTimeout("slow"), times=2)
+store.fail_next_query(MyUpstreamError("refused"))    # any exception
+```
+
+Writes are unaffected — this models a read path that fails while the index itself is fine.
 
 ## A worked example
 

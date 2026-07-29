@@ -2,7 +2,7 @@
 
 Deterministic test doubles for the retrieval half of a RAG pipeline: a steerable fake embedder and a fake vector store that reproduce real backend score conventions and filter semantics. See `PLAN.md` (gitignored, local only) for the roadmap and decision log.
 
-Status: `0.3.0` on PyPI. M0–M3 complete.
+Status: `0.4.0` on PyPI. M0–M3 complete.
 
 ## Commands
 
@@ -18,6 +18,7 @@ Status: `0.3.0` on PyPI. M0–M3 complete.
 - `src/placeborag/clusters.py` — declared clusters, the control layer over hashing
 - `src/placeborag/vector_store.py` — `FakeVectorStore`, backend profiles, filter modes
 - `src/placeborag/filters.py` — `where` clause compilation
+- `src/placeborag/failures.py` — degraded recall, stale reads, injected query errors
 - `src/placeborag/pytest_plugin.py` — fixtures, registered via a `pytest11` entry point
 - `examples/` — a worked RAG pipeline and its tests; runs in CI
 
@@ -29,6 +30,7 @@ Status: `0.3.0` on PyPI. M0–M3 complete.
 - Cluster declarations are verified geometrically at construction and raise when unsatisfiable. Failing loudly there beats a mysteriously failing retrieval assertion later.
 - Malformed filters raise; they never quietly match nothing. A filter that silently excludes everything is indistinguishable from one that works.
 - An absent metadata key never matches, under any operator.
+- **Injected failures are deterministic, never random.** A randomly failing fake produces flaky tests, which is the failure mode this library exists to eliminate. Recall survival is keyed on `(query, record_id)`.
 
 ## Releasing
 

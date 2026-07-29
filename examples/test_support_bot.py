@@ -6,6 +6,7 @@ which document came back, in what order, and how many.
 
 import pytest
 
+from placeborag import RetrievalTimeout
 from support_bot import Document, SupportBot
 
 DOCUMENTS = [
@@ -129,6 +130,63 @@ class TestReindexing:
         indexed_vector = old_store.embedder.embed("refund policy")
 
         assert query_vector != indexed_vector
+
+
+class TestWhenRetrievalMisbehaves:
+    """The pipeline works. The retrieval layer underneath it does not."""
+
+    @pytest.mark.placeborag(recall=0.4)
+    def test_a_degraded_index_still_produces_a_confident_answer(
+        self, fake_vector_store
+    ):
+        bot = SupportBot(store=fake_vector_store, generate=echo_llm)
+        bot.index(DOCUMENTS)
+
+        answer = bot.answer("how do I get my money back for an order")
+
+        # An approximate index dropped most of the candidates. The bot does
+        # not notice, does not warn, and answers from whatever survived —
+        # which is exactly how a quiet quality regression reaches users.
+        assert len(answer.sources) < 3
+
+    @pytest.mark.placeborag(recall=0.0)
+    def test_total_recall_loss_looks_like_an_empty_knowledge_base(
+        self, fake_vector_store
+    ):
+        bot = SupportBot(store=fake_vector_store, generate=echo_llm)
+        bot.index(DOCUMENTS)
+
+        answer = bot.answer("refund policy")
+
+        # No exception, no empty-index signal. The bot answers from nothing.
+        assert answer.sources == ()
+
+    @pytest.mark.placeborag(visibility="manual")
+    def test_indexing_then_querying_finds_nothing_on_a_stale_replica(
+        self, fake_vector_store
+    ):
+        bot = SupportBot(store=fake_vector_store, generate=echo_llm)
+        bot.index(DOCUMENTS)
+
+        # index() then answer() is the most natural thing to write, and it
+        # returns nothing when the backend has not refreshed yet.
+        assert bot.answer("refund policy").sources == ()
+
+        fake_vector_store.refresh()
+
+        assert bot.answer("refund policy").sources != ()
+
+    def test_a_retrieval_timeout_propagates_out_of_the_pipeline(
+        self, fake_vector_store
+    ):
+        bot = SupportBot(store=fake_vector_store, generate=echo_llm)
+        bot.index(DOCUMENTS)
+        fake_vector_store.fail_next_query()
+
+        # SupportBot has no retry and no fallback, so the timeout reaches
+        # the caller. Documented rather than hidden.
+        with pytest.raises(RetrievalTimeout):
+            bot.answer("refund policy")
 
 
 class TestSteeringWithClusters:
